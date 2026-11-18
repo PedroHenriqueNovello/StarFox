@@ -16,7 +16,11 @@ function seededRandom(seed) {
 
 function createGround() {
     const mb = new MeshBuilder();
-    const t = 65;
+    // gramado base bem maior que o alcance da névoa/`far` (220): assim a
+    // BORDA do chão fica sempre "afogada" na névoa/céu e nunca aparece,
+    // mesmo com a névoa começando longe. As faixas listradas abaixo ficam
+    // só na região perto da nave (é onde o jogador repara nelas).
+    const t = 220;
 
     // gramado base: textura repetida (tiling) muitas vezes para não esticar
     mb.quad([-t, 0, -t], [t, 0, -t], [t, 0, t], [-t, 0, t], [0.55, 0.85, 0.60], 26);

@@ -76,8 +76,22 @@ uniform vec3  u_spotDir;       // direção para onde o farol aponta (frente da 
 uniform float u_spotCosInner;  // cosseno do ângulo interno do cone (cheio)
 uniform float u_spotCosOuter;  // cosseno do ângulo externo do cone (borda)
 
+// --- Luzes de TIRO (lasers): luzes pontuais curtas, sem cone ---
+// Cada tiro ativo (até MAX_LASERS mais próximos da câmera) ilumina o que
+// está em volta com atenuação por distância, reforçando o clima noturno
+// quando o Sol está desligado.
+#define MAX_LASERS 6
+uniform vec3  u_laserPos[MAX_LASERS];   // posições dos tiros mais próximos
+uniform vec3  u_laserColor;             // cor da luz do laser (ex.: verde)
+uniform int   u_laserCount;             // quantos tiros ativos enviar (0..MAX_LASERS)
+
 uniform vec3  u_ambient;       // luz ambiente geral
 uniform float u_fogOn;         // 1.0 = névoa ligada
+
+// Emissão própria do objeto: objetos "luminosos" (ex.: o laser) somam sua
+// cor direto no resultado final, então continuam brilhando mesmo com o Sol
+// e o farol desligados.
+uniform float u_emissive;      // 0.0 = normal, >0.0 = quanto a cor base brilha sozinha
 
 out vec4 outColor;
 
@@ -120,6 +134,20 @@ void main() {
     float s1   = pow(max(dot(n, h1), 0.0), 48.0) * 0.6;
     light += u_lightOn1 * cone * att1 * (d1 * u_lightColor1 + s1 * u_lightColor1);
 
+    // ---------- LUZES DE TIRO (lasers) ----------
+    // Cada tiro é uma luz pontual curta: difusa + atenuação por distância,
+    // sem cone. Só SOMA ao resultado (nunca substitui Sol/farol). Alcance
+    // curto via atenuação forte, para iluminar só o que está perto do tiro.
+    for (int i = 0; i < MAX_LASERS; i++) {
+        if (i >= u_laserCount) break;
+        vec3  toL  = u_laserPos[i] - vWorldPos;
+        float dist = length(toL);
+        vec3  L    = toL / max(dist, 0.001);
+        float d    = max(dot(n, L), 0.0);
+        float att  = 1.0 / (1.0 + 0.15 * dist + 0.08 * dist * dist);
+        light += att * d * u_laserColor;
+    }
+
     // ---------- COR BASE DO MATERIAL ----------
     // Quando o objeto tem textura, a cor do pixel vem da imagem amostrada
     // em vTexCoord. A cor por vértice (vColor) é misturada por u_texMix
@@ -137,10 +165,14 @@ void main() {
 
     vec3 color = base * u_colorTint * light;
 
+    // emissão própria: objetos luminosos (laser) brilham mesmo sem luz
+    // externa, somando a cor base por cima da iluminação.
+    color += base * u_colorTint * u_emissive;
+
     // névoa leve: objetos distantes se misturam com o céu
     if (u_fogOn > 0.5) {
         float dist = length(u_cameraPos - vWorldPos);
-        float fog = clamp((dist - 35.0) / 60.0, 0.0, 1.0);
+        float fog = clamp((dist - 55.0) / 120.0, 0.0, 1.0);
         vec3 skyColor = vec3(0.46, 0.70, 0.92);
         color = mix(color, skyColor, fog);
     }
@@ -329,6 +361,7 @@ road.scroll   = true;
 // Uma única malha por tipo é reutilizada para desenhar várias instâncias
 // (cada tiro/inimigo/anel/prédio só muda a matriz de modelo).
 const laserObj     = createSceneObject(createLaser());
+laserObj.emissive  = 1.0;   // o tiro brilha sozinho (não depende de Sol/farol)
 const enemyObj     = createSceneObject(createEnemy());
 const ringObj      = createSceneObject(createRing());
 const explosionObj = createSceneObject(createExplosion());
@@ -361,6 +394,19 @@ const uSpotCosOuter = gl.getUniformLocation(program, "u_spotCosOuter");
 const uAmbient      = gl.getUniformLocation(program, "u_ambient");
 const uFogOn        = gl.getUniformLocation(program, "u_fogOn");
 
+// uniforms das luzes de tiro (lasers) e da emissão própria
+const uLaserColor = gl.getUniformLocation(program, "u_laserColor");
+const uLaserCount = gl.getUniformLocation(program, "u_laserCount");
+const uLaserPos   = gl.getUniformLocation(program, "u_laserPos");
+const uEmissive   = gl.getUniformLocation(program, "u_emissive");
+
+// cor da luz do laser (mesmo verde do tiro); emissão padrão desligada
+const LASER_LIGHT_COLOR = [0.30, 1.00, 0.45];
+const MAX_LASERS = 6;   // deve bater com o #define do shader
+gl.uniform3fv(uLaserColor, LASER_LIGHT_COLOR);
+gl.uniform1i(uLaserCount, 0);
+gl.uniform1f(uEmissive, 0.0);
+
 function drawObject(object) {
 
     gl.uniformMatrix4fv(uModel, false, object.modelTransform);
@@ -381,6 +427,9 @@ function drawObject(object) {
     // tinta por objeto (branco = sem alteração)
     const tint = object.tint || [1, 1, 1];
     gl.uniform3fv(uColorTint, tint);
+
+    // emissão própria (laser brilha sozinho); padrão 0 = sem emissão
+    gl.uniform1f(uEmissive, object.emissive || 0.0);
 
     gl.bindVertexArray(object.vao);
     gl.drawArrays(gl.TRIANGLES, 0, object.count);
@@ -635,7 +684,7 @@ function render() {
     const view = lookAt(cam.eye, cam.target, cam.up);
 
     // PROJEÇÃO PERSPECTIVA aplicada na cena
-    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 200);
+    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 220);
 
     gl.uniformMatrix4fv(uView, false, view);
     gl.uniformMatrix4fv(uProjection, false, proj);
@@ -655,6 +704,11 @@ function render() {
 
     gl.uniform3fv(uAmbient, lights.ambient);
     gl.uniform1f(uFogOn,    lights.fog ? 1.0 : 0.0);
+
+    // ---- LUZES DE TIRO: envia os tiros mais próximos da câmera ----
+    // Arrays de luz pesam por fragmento, então limitamos a MAX_LASERS tiros.
+    // Ordenamos por distância à câmera e mandamos só os mais próximos.
+    enviarLuzesDeTiro(cam.eye);
 
     // ---- rolagem da textura do chão/pista (sensação de movimento) ----
     // V repete muitas vezes (chão uvScale=26, pista vRep=20); dividimos o
@@ -740,6 +794,35 @@ function desenharPredios() {
 // Reutiliza uma malha por tipo, mudando só a matriz de modelo.
 // ==================================================
 
+// Monta e envia ao shader as posições dos tiros que viram "luz pontual".
+// Para não estourar os uniforms nem o custo por pixel, só enviamos os
+// MAX_LASERS tiros mais próximos da câmera (ordenados por distância).
+function enviarLuzesDeTiro(eye) {
+    const tiros = Game.tiros;
+    if (!tiros || tiros.length === 0) {
+        gl.uniform1i(uLaserCount, 0);
+        return;
+    }
+
+    // calcula a distância² de cada tiro à câmera e ordena (mais perto primeiro)
+    const porDistancia = tiros.map(t => {
+        const dx = t.x - eye[0], dy = t.y - eye[1], dz = t.z - eye[2];
+        return { t, d2: dx * dx + dy * dy + dz * dz };
+    }).sort((a, b) => a.d2 - b.d2);
+
+    const n = Math.min(MAX_LASERS, porDistancia.length);
+    const dados = new Float32Array(MAX_LASERS * 3);
+    for (let i = 0; i < n; i++) {
+        const t = porDistancia[i].t;
+        dados[i * 3 + 0] = t.x;
+        dados[i * 3 + 1] = t.y;
+        dados[i * 3 + 2] = t.z;
+    }
+
+    gl.uniform3fv(uLaserPos, dados);
+    gl.uniform1i(uLaserCount, n);
+}
+
 function desenharEntidadesDeJogo() {
 
     // tiros (lasers)
@@ -750,12 +833,17 @@ function desenharEntidadesDeJogo() {
         drawObject(laserObj);
     }
 
-    // inimigos (giram no próprio eixo para dar vida)
+    // inimigos (caça virado para a nave, com leve balanço)
     // Ordem de chamadas: as PRIMEIRAS são aplicadas ao vértice primeiro.
-    // Giramos no eixo local e só depois transladamos para a posição no mundo.
+    // O modelo tem o nariz em -Z e o inimigo avança em +Z (em direção à
+    // nave), então giramos 180° em Y para o nariz ENCARAR a nave. Em vez do
+    // giro contínuo antigo, aplicamos um leve balanço (roll/yaw) que combina
+    // com o zigue-zague do movimento, dando vida sem perder a "frente".
     for (const e of Game.inimigos) {
+        const balanco = Math.sin(time * 2.0 + e.fase);
         let m = m4.identity();
-        m = m4.yRotate(m, time * 1.5 + e.fase);     // rotação local
+        m = m4.zRotate(m, balanco * 0.25);          // leve inclinação lateral
+        m = m4.yRotate(m, Math.PI + balanco * 0.12); // vira para a nave (+Z) + leve guinada
         m = m4.translate(m, e.x, e.y, e.z);         // posição no mundo (aplicada por último)
         enemyObj.modelTransform = m;
         drawObject(enemyObj);
