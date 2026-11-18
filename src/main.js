@@ -833,12 +833,17 @@ function desenharEntidadesDeJogo() {
         drawObject(laserObj);
     }
 
-    // inimigos (giram no próprio eixo para dar vida)
+    // inimigos (caça virado para a nave, com leve balanço)
     // Ordem de chamadas: as PRIMEIRAS são aplicadas ao vértice primeiro.
-    // Giramos no eixo local e só depois transladamos para a posição no mundo.
+    // O modelo tem o nariz em -Z e o inimigo avança em +Z (em direção à
+    // nave), então giramos 180° em Y para o nariz ENCARAR a nave. Em vez do
+    // giro contínuo antigo, aplicamos um leve balanço (roll/yaw) que combina
+    // com o zigue-zague do movimento, dando vida sem perder a "frente".
     for (const e of Game.inimigos) {
+        const balanco = Math.sin(time * 2.0 + e.fase);
         let m = m4.identity();
-        m = m4.yRotate(m, time * 1.5 + e.fase);     // rotação local
+        m = m4.zRotate(m, balanco * 0.25);          // leve inclinação lateral
+        m = m4.yRotate(m, Math.PI + balanco * 0.12); // vira para a nave (+Z) + leve guinada
         m = m4.translate(m, e.x, e.y, e.z);         // posição no mundo (aplicada por último)
         enemyObj.modelTransform = m;
         drawObject(enemyObj);

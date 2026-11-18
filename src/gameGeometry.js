@@ -39,33 +39,63 @@ function createLaser() {
 }
 
 // --------------------------------------------------
-// NAVE INIMIGA — um "diamante" vermelho achatado (octaedro).
-// Visualmente diferente da Arwing e fácil de reconhecer como alvo.
+// NAVE INIMIGA — caça hostil low-poly (corpo + asas em flecha + aletas).
+// Segue a convenção de eixos do projeto: nariz para -Z, topo +Y, asas ±X.
+// Cores de alerta (vermelho/laranja) para ficar claro que é um alvo.
+// Dimensionado para caber em um raio de colisão de ~1.0 (GAME_CONFIG.raioInimigo).
 // --------------------------------------------------
 function createEnemy() {
     const mb = new MeshBuilder();
-    const corpo  = [0.85, 0.20, 0.22];   // vermelho
-    const corpo2 = [0.55, 0.12, 0.14];   // vermelho escuro (parte de trás)
 
-    const s = 0.9;
-    const topo   = [0,  s * 0.8, 0];
-    const baixo  = [0, -s * 0.8, 0];
-    const frente = [0, 0, -s];
-    const tras   = [0, 0,  s];
-    const esq    = [-s, 0, 0];
-    const dir    = [ s, 0, 0];
+    const corpo   = [0.85, 0.20, 0.22];   // vermelho (hostil)
+    const corpoEsc = [0.52, 0.11, 0.13];  // vermelho escuro (traseira/baixo)
+    const asa     = [0.70, 0.16, 0.18];   // asas em tom de vermelho
+    const alerta  = [1.00, 0.45, 0.12];   // laranja de alerta (aletas/detalhe)
 
-    // metade da frente (mais clara)
-    mb.tri(topo, frente, dir, corpo);
-    mb.tri(topo, esq, frente, corpo);
-    mb.tri(baixo, dir, frente, corpo);
-    mb.tri(baixo, frente, esq, corpo);
+    // ---------- FUSELAGEM ----------
+    // Nariz pontudo em -Z; corpo se alarga até a traseira em +Z.
+    const N = [ 0.00,  0.00, -1.00];   // nariz (ponta)
+    const U = [ 0.00,  0.30,  0.55];   // topo (traseira)
+    const D = [ 0.00, -0.26,  0.55];   // baixo (traseira)
+    const L = [-0.42,  0.00,  0.55];   // traseira esquerda
+    const R = [ 0.42,  0.00,  0.55];   // traseira direita
 
-    // metade de trás (mais escura)
-    mb.tri(topo, dir, tras, corpo2);
-    mb.tri(topo, tras, esq, corpo2);
-    mb.tri(baixo, tras, dir, corpo2);
-    mb.tri(baixo, esq, tras, corpo2);
+    // bico da frente (quatro faces convergindo no nariz)
+    mb.tri(N, U, R, corpo);      // cima-direita
+    mb.tri(N, L, U, corpo);      // cima-esquerda
+    mb.tri(N, R, D, corpoEsc);   // baixo-direita
+    mb.tri(N, D, L, corpoEsc);   // baixo-esquerda
+
+    // traseira (tampa do motor), em laranja de alerta
+    mb.tri(U, L, D, alerta);
+    mb.tri(U, D, R, alerta);
+
+    // ---------- ASAS EM FLECHA (varridas para trás) ----------
+    // Cada asa parte da raiz na fuselagem e se abre em ±X, recuando em +Z.
+    function asaInimiga(lado) {
+        const raizF = [lado * 0.30,  0.00, -0.10];   // raiz frente
+        const raizT = [lado * 0.30,  0.00,  0.45];   // raiz trás
+        const ponta = [lado * 1.05, -0.08,  0.70];   // ponta da asa (recuada)
+
+        // duas faces (topo e base) para a asa ser visível dos dois lados
+        mb.tri(raizF, raizT, ponta, asa);
+        mb.tri(raizF, ponta, raizT, asa);
+    }
+    asaInimiga(-1);
+    asaInimiga( 1);
+
+    // ---------- ALETAS VERTICAIS (duas, cor de alerta) ----------
+    // Pequenas aletas na traseira, inclinadas, reforçando a silhueta de caça.
+    function aletaInimiga(lado) {
+        const baseF  = [lado * 0.14, 0.05,  0.30];
+        const baseT  = [lado * 0.14, 0.05,  0.55];
+        const topo   = [lado * 0.22, 0.55,  0.55];
+
+        mb.tri(baseF, baseT, topo, alerta);
+        mb.tri(baseF, topo, baseT, alerta);
+    }
+    aletaInimiga(-1);
+    aletaInimiga( 1);
 
     return mb.build();
 }
