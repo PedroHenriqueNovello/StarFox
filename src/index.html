@@ -42,25 +42,108 @@
             border: 1px solid #444;
         }
         #hud strong { color: #fff; }
+
+        /* contêiner que posiciona as telas sobre o canvas */
+        .palco {
+            position: relative;
+            margin-top: 15px;
+            width: 800px;
+            height: 600px;
+        }
+        .palco canvas { margin-top: 0; }
+
+        /* HUD de jogo desenhado por cima do canvas */
+        #gameHud {
+            position: absolute;
+            top: 10px;
+            left: 12px;
+            right: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            font-family: monospace;
+            pointer-events: none;
+            text-shadow: 0 1px 3px #000;
+        }
+        #gameHud .bloco { background: rgba(0,0,0,0.45); padding: 6px 12px; border-radius: 6px; }
+        #scoreBox { color: #ffe066; font-size: 20px; font-weight: bold; }
+        #metaBox  { color: #9cd0ff; font-size: 13px; }
+        #vidasBox { color: #ff6b6b; font-size: 20px; letter-spacing: 2px; }
+        #boostBox { color: #7fff9c; font-size: 12px; margin-top: 4px; }
+
+        /* telas de início / vitória / derrota */
+        #overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            background: rgba(10, 16, 30, 0.72);
+            color: #fff;
+            font-family: sans-serif;
+            border-radius: 4px;
+        }
+        #overlay.escondido { display: none; }
+        #overlay h1 { margin: 0 0 8px; font-size: 40px; letter-spacing: 2px; }
+        #overlay h1.vitoria { color: #7fff9c; }
+        #overlay h1.derrota { color: #ff6b6b; }
+        #overlay p { margin: 4px 0; font-size: 15px; color: #cfd8ea; max-width: 620px; }
+        #overlay .dica {
+            margin-top: 16px;
+            font-size: 16px;
+            color: #ffe066;
+            background: rgba(0,0,0,0.35);
+            padding: 10px 18px;
+            border-radius: 8px;
+            border: 1px solid #555;
+        }
+        #overlay .resumo { margin-top: 10px; font-family: monospace; color: #9cd0ff; }
     </style>
 </head>
 <body>
 
     <div class="legenda">
-        <p><strong>STAR FOX - ARWING SOBREVOANDO CORNERIA</strong></p>
+        <p class="teclas"><strong>Pilotar:</strong> Setas / W A S D mover &nbsp;|&nbsp; Espaço ou J atirar &nbsp;|&nbsp; Shift impulso/desvio (acelera)</p>
+        <p class="teclas">A nave voa para frente em velocidade fixa — desvie dos prédios!</p>
+        <p class="teclas"><strong>Partida:</strong> Enter começar &nbsp;|&nbsp; R reiniciar</p>
         <p class="teclas"><strong>Câmeras:</strong> 1 Orbital &nbsp;|&nbsp; 2 Perseguição &nbsp;|&nbsp; 3 Torre fixa &nbsp;|&nbsp; 4 Visão superior &nbsp;|&nbsp; C cicla</p>
-        <p class="teclas"><strong>Luzes:</strong> Z liga/desliga Sol &nbsp;|&nbsp; X liga/desliga Holofote &nbsp;|&nbsp; F liga/desliga Névoa</p>
-        <p><strong>Mouse (arrastar)</strong> : girar câmera orbital &nbsp;|&nbsp; <strong>Scroll</strong> : zoom &nbsp;|&nbsp; <strong>Espaço</strong> : rotação automática</p>
+        <p class="teclas"><strong>Luzes:</strong> Z Sol &nbsp;|&nbsp; X Farol da nave &nbsp;|&nbsp; F Névoa</p>
     </div>
 
     <div id="hud"></div>
 
-    <canvas id="canvas" width="800" height="600"></canvas>
+    <div class="palco">
+        <canvas id="canvas" width="800" height="600"></canvas>
+
+        <!-- HUD de jogo (pontuação, meta, vidas, boost) -->
+        <div id="gameHud">
+            <div class="bloco">
+                <div id="scoreBox">0</div>
+                <div id="metaBox">Meta: 0</div>
+                <div id="boostBox">BOOST pronto</div>
+            </div>
+            <div class="bloco">
+                <div id="vidasBox"></div>
+            </div>
+        </div>
+
+        <!-- tela de início / vitória / derrota -->
+        <div id="overlay">
+            <h1 id="overlayTitulo">STAR FOX</h1>
+            <p id="overlaySub"></p>
+            <div class="resumo" id="overlayResumo"></div>
+            <div class="dica" id="overlayDica"></div>
+        </div>
+    </div>
 
     <script src="m4.js"></script>
     <script src="textures.js"></script>
     <script src="arwingGeometry.js"></script>
     <script src="sceneGeometry.js"></script>
+    <script src="gameGeometry.js"></script>
+    <script src="game.js"></script>
     <script src="main.js"></script>
 
 </body>

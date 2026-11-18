@@ -58,16 +58,23 @@ uniform vec3 u_cameraPos;
 uniform sampler2D u_texture;   // imagem aplicada ao objeto
 uniform float u_useTexture;    // 1.0 = usa textura, 0.0 = só a cor por vértice
 uniform float u_texMix;        // quanto a cor base tinge a textura (0..1)
+uniform vec2  u_texScroll;     // deslocamento de UV (rola a textura do chão/pista)
+uniform float u_useScroll;     // 1.0 = aplica u_texScroll neste objeto
+uniform vec3  u_colorTint;     // tinta multiplicativa por objeto (ex.: cor do prédio)
 
 // ---------- MÚLTIPLAS FONTES DE LUZ ----------
-// Luz 0 = SOL (direcional)  |  Luz 1 = HOLOFOTE/PONTUAL da cidade
+// Luz 0 = SOL (direcional)  |  Luz 1 = HOLOFOTE (spotlight que sai da nave)
 uniform vec3  u_lightDir0;     // direção da luz direcional (do sol para a cena, invertida no cálculo)
 uniform vec3  u_lightColor0;   // cor/intensidade do sol
 uniform float u_lightOn0;      // 1.0 = ligada, 0.0 = desligada
 
-uniform vec3  u_lightPos1;     // posição da luz pontual
-uniform vec3  u_lightColor1;   // cor/intensidade da luz pontual
-uniform float u_lightOn1;      // 1.0 = ligada, 0.0 = desligada
+// --- Holofote: agora é um SPOTLIGHT (farol) com posição, direção e cone ---
+uniform vec3  u_lightPos1;     // posição do farol (nariz da nave)
+uniform vec3  u_lightColor1;   // cor/intensidade do farol
+uniform float u_lightOn1;      // 1.0 = ligado, 0.0 = desligado
+uniform vec3  u_spotDir;       // direção para onde o farol aponta (frente da nave)
+uniform float u_spotCosInner;  // cosseno do ângulo interno do cone (cheio)
+uniform float u_spotCosOuter;  // cosseno do ângulo externo do cone (borda)
 
 uniform vec3  u_ambient;       // luz ambiente geral
 uniform float u_fogOn;         // 1.0 = névoa ligada
@@ -95,16 +102,23 @@ void main() {
     float s0 = pow(max(dot(n, h0), 0.0), 32.0) * 0.25;
     light += u_lightOn0 * (d0 * u_lightColor0 + s0 * u_lightColor0);
 
-    // ---------- LUZ 1: HOLOFOTE / PONTUAL ----------
-    // depende da posição: atenua com a distância (dá para ver de onde vem)
-    vec3  toL1 = u_lightPos1 - vWorldPos;
+    // ---------- LUZ 1: HOLOFOTE (SPOTLIGHT que sai da nave) ----------
+    // Tem posição (nariz da nave), direção (frente) e um CONE de abertura.
+    // Fora do cone não ilumina; na borda do cone a luz some suavemente.
+    vec3  toL1 = u_lightPos1 - vWorldPos;      // do fragmento para o farol
     float dist1 = length(toL1);
-    vec3  L1   = toL1 / max(dist1, 0.001);
+    vec3  L1   = toL1 / max(dist1, 0.001);     // direção fragmento -> farol
     float d1   = max(dot(n, L1), 0.0);
-    float att1 = 1.0 / (1.0 + 0.015 * dist1 + 0.0025 * dist1 * dist1);
+    float att1 = 1.0 / (1.0 + 0.008 * dist1 + 0.0012 * dist1 * dist1);
+
+    // fator do cone: ângulo entre a direção do farol e a direção farol->fragmento
+    vec3  spot = normalize(u_spotDir);
+    float cosAng = dot(normalize(-toL1), spot);     // -toL1 = farol -> fragmento
+    float cone = smoothstep(u_spotCosOuter, u_spotCosInner, cosAng);
+
     vec3  h1   = normalize(L1 + toCamera);
     float s1   = pow(max(dot(n, h1), 0.0), 48.0) * 0.6;
-    light += u_lightOn1 * att1 * (d1 * u_lightColor1 + s1 * u_lightColor1);
+    light += u_lightOn1 * cone * att1 * (d1 * u_lightColor1 + s1 * u_lightColor1);
 
     // ---------- COR BASE DO MATERIAL ----------
     // Quando o objeto tem textura, a cor do pixel vem da imagem amostrada
@@ -113,13 +127,15 @@ void main() {
     // aplicada por cima -> textura + iluminação integradas.
     vec3 base;
     if (u_useTexture > 0.5) {
-        vec3 tex = texture(u_texture, vTexCoord).rgb;
+        // rola a UV no chão/pista para dar sensação de movimento para frente
+        vec2 uv = vTexCoord + u_useScroll * u_texScroll;
+        vec3 tex = texture(u_texture, uv).rgb;
         base = mix(tex, tex * vColor, u_texMix);
     } else {
         base = vColor;
     }
 
-    vec3 color = base * light;
+    vec3 color = base * u_colorTint * light;
 
     // névoa leve: objetos distantes se misturam com o céu
     if (u_fogOn > 0.5) {
@@ -170,14 +186,6 @@ gl.useProgram(program);
 // MATRIZES DE CÂMERA
 // ==================================================
 
-// --------------------------------------------------------------
-// MATRIZ DE PROJEÇÃO PERSPECTIVA
-// É aqui que a projeção perspectiva é DEFINIDA (montada).
-// Ela é APLICADA no vertex shader: u_projection * u_view * world.
-// fovRad = campo de visão vertical; aspect = largura/altura;
-// near/far = planos de recorte. O termo -1 na linha 2,3 é o que
-// gera a divisão perspectiva (objetos distantes ficam menores).
-// --------------------------------------------------------------
 function perspective(fovRad, aspect, near, far) {
     const f = 1 / Math.tan(fovRad / 2);
     return [
@@ -309,6 +317,23 @@ const buildings = createSceneObject(createBuildings(), { texture: TEX.building, 
 const shadow    = createSceneObject(createShadow());
 const arwing    = createSceneObject(createArwing(),    { texture: TEX.metal,    texMix: 0.5  });
 
+// O chão e a pista rolam a textura para dar a sensação de voo para frente.
+ground.scroll = true;
+road.scroll   = true;
+
+// As montanhas/torres fixas originais (createBuildings) ficam só como
+// pano de fundo distante; os prédios QUE INTERAGEM com o jogo são
+// instâncias da malha unitária abaixo, posicionadas por Game.predios.
+
+// ---- objetos de JOGO (sem textura: a cor por vértice domina) ----
+// Uma única malha por tipo é reutilizada para desenhar várias instâncias
+// (cada tiro/inimigo/anel/prédio só muda a matriz de modelo).
+const laserObj     = createSceneObject(createLaser());
+const enemyObj     = createSceneObject(createEnemy());
+const ringObj      = createSceneObject(createRing());
+const explosionObj = createSceneObject(createExplosion());
+const buildingObj  = createSceneObject(createBuildingBlock(), { texture: TEX.building, texMix: 0.5 });
+
 const uModel      = gl.getUniformLocation(program, "u_model");
 const uView       = gl.getUniformLocation(program, "u_view");
 const uProjection = gl.getUniformLocation(program, "u_projection");
@@ -318,17 +343,23 @@ const uCameraPos  = gl.getUniformLocation(program, "u_cameraPos");
 const uTexture    = gl.getUniformLocation(program, "u_texture");
 const uUseTexture = gl.getUniformLocation(program, "u_useTexture");
 const uTexMix     = gl.getUniformLocation(program, "u_texMix");
+const uTexScroll  = gl.getUniformLocation(program, "u_texScroll");
+const uUseScroll  = gl.getUniformLocation(program, "u_useScroll");
+const uColorTint  = gl.getUniformLocation(program, "u_colorTint");
 gl.uniform1i(uTexture, 0);   // sampler usa a unidade de textura 0
 
 // uniforms de iluminação
-const uLightDir0   = gl.getUniformLocation(program, "u_lightDir0");
-const uLightColor0 = gl.getUniformLocation(program, "u_lightColor0");
-const uLightOn0    = gl.getUniformLocation(program, "u_lightOn0");
-const uLightPos1   = gl.getUniformLocation(program, "u_lightPos1");
-const uLightColor1 = gl.getUniformLocation(program, "u_lightColor1");
-const uLightOn1    = gl.getUniformLocation(program, "u_lightOn1");
-const uAmbient     = gl.getUniformLocation(program, "u_ambient");
-const uFogOn       = gl.getUniformLocation(program, "u_fogOn");
+const uLightDir0    = gl.getUniformLocation(program, "u_lightDir0");
+const uLightColor0  = gl.getUniformLocation(program, "u_lightColor0");
+const uLightOn0     = gl.getUniformLocation(program, "u_lightOn0");
+const uLightPos1    = gl.getUniformLocation(program, "u_lightPos1");
+const uLightColor1  = gl.getUniformLocation(program, "u_lightColor1");
+const uLightOn1     = gl.getUniformLocation(program, "u_lightOn1");
+const uSpotDir      = gl.getUniformLocation(program, "u_spotDir");
+const uSpotCosInner = gl.getUniformLocation(program, "u_spotCosInner");
+const uSpotCosOuter = gl.getUniformLocation(program, "u_spotCosOuter");
+const uAmbient      = gl.getUniformLocation(program, "u_ambient");
+const uFogOn        = gl.getUniformLocation(program, "u_fogOn");
 
 function drawObject(object) {
 
@@ -344,6 +375,13 @@ function drawObject(object) {
         gl.uniform1f(uUseTexture, 0.0);
     }
 
+    // só o chão e a pista rolam a textura (sensação de movimento)
+    gl.uniform1f(uUseScroll, object.scroll ? 1.0 : 0.0);
+
+    // tinta por objeto (branco = sem alteração)
+    const tint = object.tint || [1, 1, 1];
+    gl.uniform3fv(uColorTint, tint);
+
     gl.bindVertexArray(object.vao);
     gl.drawArrays(gl.TRIANGLES, 0, object.count);
 }
@@ -355,6 +393,8 @@ function drawObject(object) {
 const SHIP_SCALE  = 0.6;
 const SHIP_HEIGHT = 3.2;
 
+const BACKDROP_TILE = 55;   // comprimento do ciclo de repetição em Z
+
 // ==================================================
 // FONTES DE LUZ (estado controlável em tempo de execução)
 // ==================================================
@@ -365,12 +405,19 @@ const lights = {
         dir: [0.5, 1.0, 0.8],              // direção do sol
         color: [0.95, 0.90, 0.75]          // luz quente de sol
     },
+    // Holofote agora é um SPOTLIGHT que sai do nariz da nave e aponta para
+    // frente (-Z). pos/dir são atualizados no loop conforme a nave se move.
     holofote: {
         on: true,
-        pos: [0, 10, 2],                   // segue a nave (atualizado no loop)
-        color: [0.35, 0.65, 1.00]          // luz azulada de holofote
+        pos: [0, 3.2, -2.0],               // nariz da nave (atualizado no loop)
+        dir: [0, -0.15, -1.0],             // aponta para frente e levemente para baixo
+        color: [0.75, 0.88, 1.00],         // feixe branco-azulado de farol
+        cosInner: Math.cos(0.26),          // ~15° cone cheio
+        cosOuter: Math.cos(0.42)           // ~24° borda do cone
     },
-    ambient: [0.22, 0.24, 0.30],
+    // ambiente mais baixa: a cena fica em penumbra para o feixe do farol
+    // aparecer bem (o Sol, na tecla Z, devolve o "dia" para comparação).
+    ambient: [0.12, 0.13, 0.17],
     fog: true
 };
 
@@ -387,7 +434,7 @@ const lights = {
 // ==================================================
 
 const CAM_NAMES = ["Orbital (mouse)", "Perseguição", "Torre fixa", "Visão superior"];
-let camMode = 0;
+let camMode = 1;   // começa na câmera de perseguição (melhor para jogar)
 
 // estado da câmera orbital (mouse)
 let camYaw      = 0.7;
@@ -416,7 +463,6 @@ window.addEventListener("mousemove", (e) => {
     lastX = e.clientX;
     lastY = e.clientY;
 });
-
 canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
     camDistance *= (e.deltaY > 0) ? 1.08 : 0.92;
@@ -427,8 +473,9 @@ window.addEventListener("keydown", (e) => {
 
     switch (e.code) {
 
-        case "Space":
-            e.preventDefault();
+        // Espaço = atirar (tratado em game.js). Rotação automática da
+        // câmera orbital agora fica na tecla P, para não conflitar.
+        case "KeyP":
             autoRotate = !autoRotate;
             break;
 
@@ -458,7 +505,7 @@ function updateHud() {
     hud.innerHTML =
         `<strong>Câmera [${camMode + 1}]:</strong> ${CAM_NAMES[camMode]} &nbsp;|&nbsp; ` +
         `<strong>Sol [Z]:</strong> ${lights.sol.on ? "ON" : "OFF"} &nbsp;|&nbsp; ` +
-        `<strong>Holofote [X]:</strong> ${lights.holofote.on ? "ON" : "OFF"} &nbsp;|&nbsp; ` +
+        `<strong>Farol [X]:</strong> ${lights.holofote.on ? "ON" : "OFF"} &nbsp;|&nbsp; ` +
         `<strong>Névoa [F]:</strong> ${lights.fog ? "ON" : "OFF"}`;
 }
 
@@ -521,28 +568,63 @@ function computeCamera(alvoNave, time) {
 
 let time = 0;
 
+let ultimoFrame = performance.now();
+
 function render() {
 
-    time += 0.016;
+    // dt real (em segundos) para a lógica de jogo ficar independente do FPS
+    const agora = performance.now();
+    let dt = (agora - ultimoFrame) / 1000;
+    ultimoFrame = agora;
+    if (dt > 0.05) dt = 0.05;   // limita saltos (ex.: aba em segundo plano)
+
+    time += dt;
+
+    // ---- ATUALIZA A LÓGICA DE JOGO (controles, tiros, inimigos, colisões) ----
+    atualizarJogo(dt);
+    atualizarGameHud();
 
     if (autoRotate && camMode === 0) {
         camYaw += 0.006;
     }
 
-    // ---- Nave (posição no mundo) ----
-    const altura = SHIP_HEIGHT + 0.15 * Math.sin(time * 1.5);
-    const inclinacao = 0.12 * Math.sin(time * 0.9);
+    // ---- Nave controlada pelo jogador (posição vinda de Game.nave) ----
+    const n = Game.nave;
+    // leve flutuação quando parado, só na tela de início
+    const bob = (Game.fase === Game.FASE.PRONTO) ? 0.15 * Math.sin(time * 1.5) : 0;
 
+    // pisca a nave quando está invulnerável após levar dano
+    const piscando = Game.invulnDano > 0 && (Math.floor(time * 20) % 2 === 0);
+
+    // BARREL ROLL: durante o boost a nave dá um giro completo (360°) no
+    // eixo Z. boostGiroProgresso() vai de 0 a 1 ao longo do boost; usamos
+    // uma curva suave (easing) para o giro acelerar e desacelerar.
+    const giroProg = boostGiroProgresso();
+    const giroSuave = giroProg * giroProg * (3 - 2 * giroProg);   // smoothstep
+    const barrelRoll = giroSuave * Math.PI * 2;                   // 0 -> 2π
+
+    // Ordem: escala -> roll -> pitch -> translação (translação aplicada por
+    // último, então usa diretamente as coordenadas de mundo de Game.nave).
     let m = m4.identity();
     m = m4.scale(m, SHIP_SCALE, SHIP_SCALE, SHIP_SCALE);
-    m = m4.zRotate(m, inclinacao);
-    m = m4.translate(m, 0, altura, 0);
+    m = m4.zRotate(m, n.roll + barrelRoll);   // roll de manobra + giro do boost
+    m = m4.xRotate(m, n.pitch);
+    m = m4.translate(m, n.x, n.y + bob, n.z);
     arwing.modelTransform = m;
 
-    const naveWorld = [0, altura * SHIP_SCALE, 0];
+    const naveWorld = [n.x, n.y + bob, n.z];
 
-    // holofote acompanha a nave, um pouco acima
-    lights.holofote.pos = [naveWorld[0], naveWorld[1] + 6.0, naveWorld[2] + 2.0];
+    // sombra da nave projetada no chão, acompanhando o X/Z
+    let ms = m4.identity();
+    ms = m4.translate(ms, naveWorld[0], 0, naveWorld[2]);
+    shadow.modelTransform = ms;
+
+    // ---- SPOTLIGHT: sai do nariz da nave e aponta para frente (-Z) ----
+    // posição = um pouco à frente da nave; direção acompanha o roll/pitch
+    lights.holofote.pos = [naveWorld[0], naveWorld[1], naveWorld[2] - 1.8];
+    // direção para frente, inclinada para baixo, deslocada pelo roll lateral
+    const sideTilt = Math.sin(n.roll) * 0.35;
+    lights.holofote.dir = [sideTilt + n.x * 0.0, -0.18 + n.pitch * 0.5, -1.0];
 
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -564,21 +646,229 @@ function render() {
     gl.uniform3fv(uLightColor0, lights.sol.color);
     gl.uniform1f(uLightOn0,     lights.sol.on ? 1.0 : 0.0);
 
-    gl.uniform3fv(uLightPos1,   lights.holofote.pos);
-    gl.uniform3fv(uLightColor1, lights.holofote.color);
-    gl.uniform1f(uLightOn1,     lights.holofote.on ? 1.0 : 0.0);
+    gl.uniform3fv(uLightPos1,    lights.holofote.pos);
+    gl.uniform3fv(uLightColor1,  lights.holofote.color);
+    gl.uniform1f(uLightOn1,      lights.holofote.on ? 1.0 : 0.0);
+    gl.uniform3fv(uSpotDir,      lights.holofote.dir);
+    gl.uniform1f(uSpotCosInner,  lights.holofote.cosInner);
+    gl.uniform1f(uSpotCosOuter,  lights.holofote.cosOuter);
 
     gl.uniform3fv(uAmbient, lights.ambient);
     gl.uniform1f(uFogOn,    lights.fog ? 1.0 : 0.0);
 
+    // ---- rolagem da textura do chão/pista (sensação de movimento) ----
+    // V repete muitas vezes (chão uvScale=26, pista vRep=20); dividimos o
+    // scroll do mundo por um fator proporcional para a velocidade parecer certa.
+    const scrollV = -(Game.mundoScroll / 6.0);
+    gl.uniform2f(uTexScroll, 0.0, scrollV);
+
     drawObject(ground);
     drawObject(road);
-    drawObject(buildings);
+
+    // ---- backdrop distante (montanhas/torres originais) rolando ----
+    // Em vez de ficar parado (parecia uma estrutura "travada"), o conjunto
+    // rola em +Z junto com o mundo e volta para o fundo ao passar de um
+    // ciclo. Desenhamos em dois blocos deslocados para não haver emenda.
+    desenharBackdrop();
+
     drawObject(shadow);
-    drawObject(arwing);
+
+    // ==================================================
+    // BACKDROP DISTANTE (montanhas + torres originais) rolando/reciclando.
+    // A malha `buildings` tem seu conteúdo em torno de Z ≈ -22..-38. Deslocamos
+    // em +Z pelo scroll do mundo (módulo o tamanho do ciclo) e desenhamos duas
+    // cópias separadas por um ciclo, de modo que, quando uma sai, a outra já
+    // está cobrindo o fundo — dá a impressão de paisagem distante passando.
+    // ==================================================
+
+    // Faixa distante onde o backdrop vive e recicla. O conteúdo original tem
+    // ~16 unidades de profundidade (Z ≈ -38..-22); o ciclo é maior que isso para
+    // as duas cópias cobrirem a faixa sem buraco, e tudo fica sempre atrás da nave.
+    // comprimento do ciclo de repetição em Z
+
+    function desenharBackdrop() {
+        // desloc: 0..TILE. Some em +Z (aproxima) e, ao fechar o ciclo, volta ao
+        // fundo. Mantemos as cópias numa faixa distante com um recuo (RECUO),
+        // para que mesmo o ponto mais próximo do ciclo continue longe da nave.
+        const desloc = Game.mundoScroll % BACKDROP_TILE;   // 0..TILE
+        const RECUO = -20;   // nunca deixa o backdrop chegar mais perto que ~Z -20
+
+        for (let i = 0; i < 2; i++) {
+            // dz varia de (RECUO - TILE) até RECUO — sempre negativo (distante)
+            const dz = RECUO - i * BACKDROP_TILE + desloc - BACKDROP_TILE;
+            let m = m4.identity();
+            m = m4.translate(m, 0, 0, dz);
+            buildings.modelTransform = m;
+            drawObject(buildings);
+        }
+        buildings.modelTransform = m4.identity();
+    }
+    
+    // prédios (cenário + obstáculos) rolando com o mundo
+    desenharPredios();
+
+    if (!piscando) drawObject(arwing);
+
+    // ---- desenha as entidades de JOGO ----
+    desenharEntidadesDeJogo();
 
     requestAnimationFrame(render);
 }
+
+// ==================================================
+// DESENHO DOS PRÉDIOS (instâncias da malha unitária)
+// Cada prédio é escalado por (w, h, d) e posicionado por (x, z).
+// A malha tem base em y=0 e topo em y=1, então a escala em Y vira a altura.
+// ==================================================
+
+function desenharPredios() {
+    for (const p of Game.predios) {
+        buildingObj.tint = p.cor;   // cor da construção (variação visual)
+
+        // ordem: escala -> translação (translação por último = posição no mundo)
+        let m = m4.identity();
+        m = m4.scale(m, p.w, p.h, p.d);
+        m = m4.translate(m, p.x, 0, p.z);
+        buildingObj.modelTransform = m;
+        drawObject(buildingObj);
+    }
+    buildingObj.tint = null;   // restaura para não afetar outros desenhos
+}
+
+// ==================================================
+// DESENHO DAS ENTIDADES DE JOGO
+// Reutiliza uma malha por tipo, mudando só a matriz de modelo.
+// ==================================================
+
+function desenharEntidadesDeJogo() {
+
+    // tiros (lasers)
+    for (const t of Game.tiros) {
+        let m = m4.identity();
+        m = m4.translate(m, t.x, t.y, t.z);
+        laserObj.modelTransform = m;
+        drawObject(laserObj);
+    }
+
+    // inimigos (giram no próprio eixo para dar vida)
+    // Ordem de chamadas: as PRIMEIRAS são aplicadas ao vértice primeiro.
+    // Giramos no eixo local e só depois transladamos para a posição no mundo.
+    for (const e of Game.inimigos) {
+        let m = m4.identity();
+        m = m4.yRotate(m, time * 1.5 + e.fase);     // rotação local
+        m = m4.translate(m, e.x, e.y, e.z);         // posição no mundo (aplicada por último)
+        enemyObj.modelTransform = m;
+        drawObject(enemyObj);
+    }
+
+    // anéis de bônus (coletáveis): deita o anel de frente e gira
+    for (const r of Game.aneis) {
+        let m = m4.identity();
+        m = m4.xRotate(m, Math.PI / 2);   // deixa o anel "de frente" para a nave
+        m = m4.zRotate(m, r.girar);
+        m = m4.translate(m, r.x, r.y, r.z);
+        ringObj.modelTransform = m;
+        drawObject(ringObj);
+    }
+
+    // explosões (crescem e somem)
+    for (const ex of Game.explosoes) {
+        const prog = ex.t / ex.duracao;          // 0 -> 1
+        const escala = 0.5 + prog * 1.8;
+        let m = m4.identity();
+        m = m4.scale(m, escala, escala, escala);
+        m = m4.yRotate(m, prog * 6.0);
+        m = m4.translate(m, ex.x, ex.y, ex.z);
+        explosionObj.modelTransform = m;
+        drawObject(explosionObj);
+    }
+}
+
+// ==================================================
+// HUD E TELAS DE JOGO (pontuação, vidas, início/vitória/derrota)
+// ==================================================
+
+const elScore   = document.getElementById("scoreBox");
+const elMeta    = document.getElementById("metaBox");
+const elVidas   = document.getElementById("vidasBox");
+const elBoost   = document.getElementById("boostBox");
+const elOverlay = document.getElementById("overlay");
+const elTitulo  = document.getElementById("overlayTitulo");
+const elSub     = document.getElementById("overlaySub");
+const elResumo  = document.getElementById("overlayResumo");
+const elDica    = document.getElementById("overlayDica");
+
+function atualizarGameHud() {
+    if (elScore) elScore.textContent = Game.pontuacao;
+    if (elMeta) {
+        const vel = Math.round(velocidadeMundoAtual() * 10);   // "km/h" fictício
+        elMeta.innerHTML = "Meta: " + Game.config.pontuacaoVitoria +
+            " &nbsp;|&nbsp; Vel: " + vel + (boostAtivo() ? " ▲" : "");
+    }
+    if (elVidas) elVidas.textContent = "♥".repeat(Math.max(0, Game.vidas));
+    if (elBoost) {
+        if (boostAtivo()) {
+            elBoost.textContent = "BOOST!";
+            elBoost.style.color = "#ffe066";
+        } else if (boostDisponivel()) {
+            elBoost.textContent = "BOOST pronto";
+            elBoost.style.color = "#7fff9c";
+        } else {
+            elBoost.textContent = "BOOST recarregando";
+            elBoost.style.color = "#888";
+        }
+    }
+}
+
+// mostra/esconde as telas conforme a fase muda
+function aoMudarFase(fase) {
+    if (!elOverlay) return;
+
+    if (fase === Game.FASE.JOGANDO) {
+        elOverlay.classList.add("escondido");
+        return;
+    }
+
+    elOverlay.classList.remove("escondido");
+
+    if (fase === Game.FASE.PRONTO) {
+        elTitulo.textContent = "STAR FOX";
+        elTitulo.className = "";
+        elSub.innerHTML = "Voe sobre Corneria em alta velocidade. Destrua as naves inimigas " +
+            "(vermelhas) e atravesse os anéis dourados para pontuar. <strong>Desvie dos " +
+            "prédios</strong> — bater neles custa uma vida! Alcance <strong>" +
+            Game.config.pontuacaoVitoria + "</strong> pontos antes de perder suas " +
+            Game.config.vidasIniciais + " vidas.";
+        elResumo.textContent = "";
+        elDica.textContent = "Pressione ENTER para começar";
+    }
+    else if (fase === Game.FASE.VITORIA) {
+        elTitulo.textContent = "VITÓRIA!";
+        elTitulo.className = "vitoria";
+        elSub.textContent = "Você defendeu Corneria e atingiu a meta de pontuação!";
+        elResumo.innerHTML = resumoPartida();
+        elDica.textContent = "Pressione R para jogar de novo";
+    }
+    else if (fase === Game.FASE.DERROTA) {
+        elTitulo.textContent = "FIM DE JOGO";
+        elTitulo.className = "derrota";
+        elSub.textContent = "Sua Arwing foi abatida. Tente novamente!";
+        elResumo.innerHTML = resumoPartida();
+        elDica.textContent = "Pressione R para reiniciar";
+    }
+}
+
+function resumoPartida() {
+    const s = Game.stats;
+    return `Pontuação: <strong>${Game.pontuacao}</strong> &nbsp;|&nbsp; Recorde: ${Game.recorde}<br>` +
+           `Inimigos destruídos: ${s.destruidos} &nbsp;|&nbsp; Anéis coletados: ${s.coletados} &nbsp;|&nbsp; ` +
+           `Inimigos que escaparam: ${s.escaparam}`;
+}
+
+// liga os controles de jogo e a troca de telas
+registrarEntradasDeJogo();
+Game.onFaseMudou = aoMudarFase;
+aoMudarFase(Game.fase);   // desenha a tela inicial
 
 updateHud();
 render();
