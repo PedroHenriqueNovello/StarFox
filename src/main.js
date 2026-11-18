@@ -172,7 +172,7 @@ void main() {
     // névoa leve: objetos distantes se misturam com o céu
     if (u_fogOn > 0.5) {
         float dist = length(u_cameraPos - vWorldPos);
-        float fog = clamp((dist - 35.0) / 60.0, 0.0, 1.0);
+        float fog = clamp((dist - 55.0) / 120.0, 0.0, 1.0);
         vec3 skyColor = vec3(0.46, 0.70, 0.92);
         color = mix(color, skyColor, fog);
     }
@@ -684,7 +684,7 @@ function render() {
     const view = lookAt(cam.eye, cam.target, cam.up);
 
     // PROJEÇÃO PERSPECTIVA aplicada na cena
-    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 200);
+    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 220);
 
     gl.uniformMatrix4fv(uView, false, view);
     gl.uniformMatrix4fv(uProjection, false, proj);

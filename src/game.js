@@ -18,7 +18,7 @@
 
 const GAME_CONFIG = {
     // --- objetivo / condições de fim ---
-    pontuacaoVitoria: 1500,   // pontos para VENCER
+    pontuacaoVitoria: 3000,   // pontos para VENCER
     vidasIniciais: 3,         // quantas colisões o jogador aguenta
 
     // --- movimentação do jogador ---
