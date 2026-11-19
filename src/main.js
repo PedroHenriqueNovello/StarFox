@@ -169,11 +169,18 @@ void main() {
     // externa, somando a cor base por cima da iluminação.
     color += base * u_colorTint * u_emissive;
 
-    // névoa leve: objetos distantes se misturam com o céu
+    // névoa: durante o dia fica azul-clara; com o Sol desligado,
+    // fica escura, com aparência de noite
     if (u_fogOn > 0.5) {
         float dist = length(u_cameraPos - vWorldPos);
         float fog = clamp((dist - 55.0) / 120.0, 0.0, 1.0);
-        vec3 skyColor = vec3(0.46, 0.70, 0.92);
+
+        vec3 daySkyColor = vec3(0.46, 0.70, 0.92);
+        vec3 nightSkyColor = vec3(0.02, 0.04, 0.10);
+
+        // u_lightOn0 vale 1 quando o Sol está ligado e 0 quando está desligado
+        vec3 skyColor = mix(nightSkyColor, daySkyColor, u_lightOn0);
+
         color = mix(color, skyColor, fog);
     }
 
