@@ -1,317 +1,168 @@
-# Relatório — Jogabilidade, interação e pontuação
+Relatório — Jogabilidade, interação e pontuação
 
-**Projeto:** Star Fox 3D – Arwing sobrevoando Corneria  
-**Tecnologia:** WebGL 2 puro, JavaScript e GLSL ES 3.00  
-**Data:** 19/11/2026
+Projeto: Star Fox 3D – Arwing sobrevoando Corneria
+Tecnologia: WebGL 2, JavaScript e GLSL ES 3.00
+Data: 19/11/2026
 
-## 1. Objetivo desta entrega
+1. Apresentação
 
-Este relatório documenta as mecânicas de jogabilidade, os controles, as interações com o cenário, o sistema de pontuação e as condições de vitória e derrota do projeto **Star Fox 3D**.
+Este relatório apresenta a implementação dos recursos de jogabilidade, interação, pontuação e condições de encerramento desenvolvidos para o projeto Star Fox 3D. A aplicação consiste em um jogo de voo em terceira dimensão no qual o jogador controla uma nave Arwing em um cenário urbano inspirado em Corneria.
 
-A versão atual permite controlar a nave Arwing em um cenário 3D, desviar de prédios, enfrentar naves inimigas, disparar lasers, coletar anéis, utilizar um impulso de esquiva e acompanhar visualmente a pontuação, as vidas e o progresso da partida.
+A versão entregue reúne as mecânicas fundamentais previstas para a proposta: movimentação da nave, disparo de lasers, desvio de obstáculos, enfrentamento de inimigos, coleta de itens, detecção de colisões, sistema de pontuação, condições de vitória e derrota e reinício da partida.
 
-Também foi concluída a melhoria prevista no documento `documents/planejamento_futuro.md`: quando o Sol é desligado pela tecla `Z`, a névoa e o fundo da cena assumem uma tonalidade azul-escura, reforçando o aspecto noturno.
+As funcionalidades foram implementadas em WebGL 2 puro, com JavaScript e shaders GLSL escritos manualmente, sem a utilização de engines 3D externas.
 
-O projeto continua sendo executado em **WebGL 2 puro**, sem o uso de Three.js, Babylon.js ou outra engine 3D externa.
+2. Implementação da jogabilidade
 
-## 2. Arquivos relacionados às mecânicas
+A movimentação da Arwing ocorre nos eixos horizontal e vertical, enquanto o deslocamento do cenário em direção ao jogador produz a sensação de avanço contínuo. A nave permanece limitada ao corredor de voo, impedindo que o jogador abandone a área jogável.
 
-| Arquivo | Responsabilidade |
-|---|---|
-| `src/index.html` | Canvas, HUD, instruções de controle e telas de início, vitória e derrota |
-| `src/game.js` | Estado da partida, controles, movimentação, spawns, colisões, pontuação e regras de término |
-| `src/main.js` | Renderização, câmeras, iluminação, névoa, HUD auxiliar e envio dos dados para os shaders |
-| `src/gameGeometry.js` | Geometria da nave inimiga, lasers, anéis e demais entidades visuais |
-| `src/sceneGeometry.js` | Geometria do chão, pista, prédios e cenário |
-| `src/m4.js` | Operações matemáticas com matrizes de transformação |
-| `documents/planejamento_futuro.md` | Planejamento das melhorias visuais e de iluminação |
+A movimentação é realizada pelas setas do teclado ou pelas teclas W, A, S e D. A inclinação visual da nave acompanha os movimentos laterais e verticais, contribuindo para a resposta visual da pilotagem.
 
----
+O disparo é realizado pelas teclas Espaço ou J. Cada ação cria dois lasers, posicionados nas laterais da nave, que percorrem o cenário e podem atingir as naves inimigas. Os lasers também receberam iluminação própria e podem contribuir para a iluminação dos elementos próximos da cena.
 
-## 3. Movimentação e controles
+A tecla Shift ativa o impulso de esquiva. O recurso possui duração e recarga, acelera temporariamente o deslocamento visual do cenário e protege a nave contra determinadas colisões durante sua ativação. O estado do impulso é apresentado no HUD da partida.
 
-### 3.1 Movimentação da Arwing
+A aplicação também disponibiliza quatro câmeras de visualização — orbital, perseguição, torre fixa e superior — alternáveis pelas teclas 1, 2, 3, 4 e C. Esses modos permitem observar tanto a jogabilidade quanto os elementos visuais do cenário.
 
-A nave é controlada nos eixos horizontal e vertical enquanto o cenário se desloca automaticamente para criar a sensação de voo para frente.
+3. Interações com o cenário e entidades do jogo
 
-- **Setas esquerda/direita** ou **A/D**: movimentação lateral.
-- **Setas para cima/baixo** ou **W/S**: movimentação vertical.
-- A nave permanece dentro dos limites do corredor de voo por meio de limites de posição em X e Y.
-- A inclinação visual da nave acompanha a movimentação lateral e vertical, deixando a resposta visual mais próxima de uma aeronave.
+O cenário é composto por pista, gramado, prédios, montanhas e torres. Os prédios possuem função visual e também atuam como obstáculos. Eles são reciclados ao longo do eixo de voo, mantendo a continuidade do cenário sem a necessidade de criar uma fase de extensão fixa.
 
-A velocidade do cenário é controlada por `velocidadeMundo`. Dessa forma, o jogador pilota a nave desviando dos elementos que se aproximam, sem precisar controlar diretamente o avanço em Z.
+As naves inimigas surgem à frente do jogador e avançam em sua direção com uma variação lateral. O modelo inimigo foi atualizado para um caça low-poly com fuselagem, asas e aletas, substituindo o modelo geométrico simplificado utilizado anteriormente. A orientação do caça permanece voltada para a nave do jogador, tornando sua função hostil mais evidente visualmente.
 
-### 3.2 Disparo
+Os anéis dourados são elementos coletáveis distribuídos ao longo do percurso. A coleta ocorre quando a nave se aproxima o suficiente do item, utilizando a mesma estrutura geral de detecção de proximidade empregada nas demais interações.
 
-- **Espaço** ou **J**: dispara os lasers.
-- Cada ação de disparo cria dois tiros, um de cada lado da nave.
-- Os tiros avançam pelo cenário e são removidos quando ultrapassam o alcance definido.
-- O contador interno registra a quantidade de disparos realizados.
+As colisões são calculadas no código de jogo por meio de volumes geométricos simplificados. São consideradas as colisões entre laser e inimigo, nave e inimigo, nave e anel e nave e prédio. Cada tipo de interação produz uma consequência específica, incluindo destruição, coleta, perda de vida, penalidade de pontuação e criação de efeitos de explosão.
 
-Os lasers também receberam uma melhoria visual: até seis tiros mais próximos da câmera podem contribuir como fontes pontuais de luz, iluminando o chão e os prédios ao redor. O próprio laser possui emissão de luz, portanto continua visível mesmo quando o Sol está desligado.
+Após uma colisão com prédio, é aplicada uma breve janela de invulnerabilidade para evitar que a mesma colisão provoque perdas consecutivas. Durante o impulso de esquiva, a nave não sofre o dano correspondente às colisões protegidas pelo recurso.
 
-### 3.3 Impulso e esquiva
+4. Sistema de pontuação
 
-- **Shift**: ativa o boost quando ele está disponível.
-- O boost possui duração e tempo de recarga.
-- Durante o boost, a nave executa uma rotação visual de esquiva, o cenário acelera e a nave fica protegida de colisões que normalmente causariam perda de vida.
-- O HUD informa se o boost está pronto, ativo ou recarregando.
+A pontuação é atualizada continuamente durante a partida e apresentada no HUD, junto com a meta de vitória, a velocidade e a quantidade de vidas restantes.
 
-### 3.4 Início e reinício
+Evento
+Pontuação
+Destruição de uma nave inimiga
++100
+Coleta de um anel
++75
+Fuga de uma nave inimiga
+−25
 
-- **Enter**: inicia a partida na tela inicial.
-- **R**: reinicia a partida depois de uma vitória ou derrota.
 
-Ao reiniciar, a pontuação, as vidas, os tiros, os inimigos, os anéis, as explosões e o estado do cenário são restaurados para os valores iniciais.
 
-### 3.5 Câmeras e iluminação
 
-Os controles auxiliares são:
+A fuga ocorre quando uma nave inimiga ultrapassa a posição do jogador sem ser destruída. A penalidade correspondente impede que o jogador avance apenas evitando os inimigos e reforça a necessidade de utilizar os disparos de forma adequada. A pontuação é limitada inferiormente a zero.
 
-- **1**: câmera orbital.
-- **2**: câmera de perseguição.
-- **3**: câmera fixa na torre.
-- **4**: visão superior.
-- **C**: alterna entre as câmeras.
-- **Z**: liga ou desliga o Sol.
-- **X**: liga ou desliga o farol da nave.
-- **F**: liga ou desliga a névoa.
+A dificuldade também se ajusta progressivamente conforme a pontuação aumenta, reduzindo o intervalo entre o surgimento dos inimigos até o limite estabelecido pela configuração do jogo.
 
----
+A meta de vitória da versão atual é de 3.000 pontos. Esse valor foi ampliado em relação à configuração anterior para aumentar a duração e o desafio da partida.
 
-## 4. Interações e regras do jogo
+5. Condições de vitória, derrota e reinício
 
-### 4.1 Inimigos
+A vitória ocorre quando a pontuação do jogador atinge ou supera a meta de 3.000 pontos. Nesse momento, a partida é interrompida e a interface apresenta a mensagem de vitória, acompanhada do resumo das estatísticas obtidas.
 
-As naves inimigas surgem à frente do jogador e avançam em direção à Arwing. Elas realizam um leve movimento lateral, dificultando a mira.
+A derrota ocorre quando as três vidas iniciais são perdidas. A interface apresenta a mensagem de fim de jogo e informa a pontuação alcançada, o recorde, a quantidade de inimigos destruídos, os anéis coletados e os inimigos que escaparam.
 
-O modelo visual foi atualizado de um octaedro vermelho para um caça hostil low-poly, com:
+As telas de início, vitória e derrota possuem estados distintos no fluxo do jogo. A tecla Enter inicia a partida e a tecla R permite reiniciar uma partida encerrada, restaurando a pontuação, as vidas, as entidades e o estado do cenário.
 
-- Fuselagem pontuda.
-- Asas laterais.
-- Aletas verticais.
-- Cores vermelha e laranja para indicar perigo.
-- Orientação voltada para a nave do jogador.
+6. Atualização da iluminação e da névoa
 
-### 4.2 Tiro contra inimigo
+Como parte das melhorias visuais desenvolvidas para a versão atual, os lasers passaram a emitir luz pontual de curto alcance. A contribuição luminosa é calculada no fragment shader e enviada para os seis tiros mais próximos da câmera, mantendo o custo de processamento controlado.
 
-Quando um laser colide com uma nave inimiga:
+Também foi implementada a alteração prevista no planejamento futuro do projeto para a névoa escura. Com o Sol ligado, a névoa utiliza a coloração azul-clara característica da cena diurna. Quando o Sol é desligado pela tecla Z, a névoa e a cor de fundo do canvas passam a utilizar uma tonalidade azul-escura, reforçando a ambientação noturna.
 
-1. O inimigo é destruído.
-2. O tiro é consumido.
-3. Uma explosão visual é criada.
-4. O jogador recebe pontos.
-5. O contador de inimigos destruídos é atualizado.
+A tecla F permanece responsável por ativar ou desativar a névoa. Dessa forma, o efeito pode ser comparado durante a execução com o Sol ligado e desligado.
 
-A colisão é calculada por volumes esféricos, comparando a distância entre os centros das entidades com a soma dos seus raios de colisão.
 
-### 4.3 Inimigo que escapa
 
-Se uma nave inimiga passa pela posição da nave do jogador sem ser destruída, ela é considerada uma fuga.
 
-Nesse caso:
 
-- O contador de inimigos que escaparam aumenta.
-- O jogador perde **25 pontos**.
-- A pontuação nunca fica abaixo de zero.
 
-Essa penalidade aumenta a importância de destruir os inimigos antes que eles atravessem o corredor de voo.
 
-### 4.4 Colisão entre nave e inimigo
 
-Se a Arwing colidir com um inimigo:
 
-- A nave inimiga é removida.
-- Uma explosão visual é criada.
-- O jogador perde uma vida.
-- Durante o boost, a colisão funciona como uma esquiva e não causa perda de vida.
 
-### 4.5 Anéis coletáveis
 
-Anéis dourados surgem no caminho da nave e podem ser coletados por proximidade.
+Figura 1 – Execução durante a partida com Sol [Z]: OFF e Névoa [F]: ON, evidenciando a ambientação escura, a Arwing e uma nave inimiga no percurso.
 
-Ao atravessar um anel:
+7. Registros da execução
 
-- O anel é removido.
-- O contador de anéis coletados aumenta.
-- O jogador recebe **75 pontos**.
+A versão jogável foi validada em navegador com suporte a WebGL 2. Durante a execução, o HUD apresenta o estado das fontes de luz, da névoa, da pontuação, da meta, do impulso e das vidas.
 
-### 4.6 Prédios e obstáculos
+A tela de encerramento apresenta uma indicação clara do resultado da partida e permite iniciar uma nova execução por meio do comando de reinício.
 
-Os prédios fazem parte do cenário e também funcionam como obstáculos. Eles aparecem dos dois lados e em partes do corredor de voo, sendo reciclados para a frente do cenário para manter a sensação de um percurso contínuo.
 
-Quando a nave colide com um prédio:
 
-- O jogador perde uma vida.
-- Uma explosão visual é criada.
-- É ativada uma janela de invulnerabilidade de aproximadamente um segundo, evitando várias perdas consecutivas na mesma colisão.
-- Durante o boost, a colisão não causa dano.
 
----
 
-## 5. Sistema de pontuação
 
-A pontuação é armazenada em `Game.pontuacao` e é atualizada durante a partida conforme as ações do jogador e os acontecimentos do cenário.
 
-| Ação ou acontecimento | Pontuação |
-|---|---:|
-| Destruir uma nave inimiga | +100 |
-| Coletar um anel | +75 |
-| Deixar uma nave inimiga escapar | −25 |
-| Colidir com prédio ou inimigo | Perde vida, sem desconto direto de pontos |
 
-A pontuação aparece no HUD sobre o canvas. O mesmo HUD apresenta a meta de vitória, a velocidade, o estado do boost e a quantidade de vidas restantes.
 
-A pontuação também influencia a dificuldade: conforme o jogador acumula pontos, o intervalo de surgimento dos inimigos diminui até um limite, fazendo com que a partida fique progressivamente mais difícil.
 
-A meta de vitória foi ajustada de **1.500 para 3.000 pontos**.
 
----
+Figura 2 – Tela de derrota com a indicação de fim de jogo, resumo da partida e opção de reinício.
 
-## 6. Condições de vitória e derrota
+8. Roteiro da demonstração em vídeo
 
-### 6.1 Vitória
+A demonstração deverá apresentar, de forma contínua, os seguintes aspectos:
 
-A partida termina em vitória quando:
+1.
+Início da partida e apresentação do HUD.
 
-```javascript
-Game.pontuacao >= Game.config.pontuacaoVitoria
-```
+2.
+Movimentação da Arwing pelo corredor de voo.
 
-Na configuração atual, o jogador precisa atingir **3.000 pontos**.
+3.
+Disparo contra uma nave inimiga e atualização da pontuação.
 
-Ao alcançar a meta:
+4.
+Coleta de um anel dourado.
 
-- A fase muda para `VITORIA`.
-- A tela exibe a mensagem **“VITÓRIA!”**.
-- É apresentado um resumo da pontuação e das estatísticas da partida.
-- O jogador pode pressionar **R** para iniciar uma nova partida.
+5.
+Utilização do impulso de esquiva.
 
-### 6.2 Derrota
+6.
+Interação com os prédios e demonstração da perda de vida em caso de colisão.
 
-A partida termina em derrota quando o jogador perde todas as vidas:
+7.
+Comparação da cena com o Sol ligado e desligado, mantendo a névoa ativada.
 
-```javascript
-Game.vidas <= 0
-```
+8.
+Apresentação da tela de derrota ou, quando possível, da tela de vitória.
 
-Na configuração atual, a Arwing começa com **3 vidas**.
+9.
+Reinício da partida por meio da tecla R.
 
-Ao perder todas as vidas:
+A gravação deve priorizar a visualização das mecânicas e das consequências das ações do jogador, permitindo verificar o funcionamento do sistema de pontuação e das condições de encerramento.
 
-- A fase muda para `DERROTA`.
-- A tela exibe **“FIM DE JOGO”**.
-- São mostradas a pontuação, o recorde, os inimigos destruídos, os anéis coletados e os inimigos que escaparam.
-- O jogador pode pressionar **R** para reiniciar.
+9. Arquivos e execução
 
----
+Os principais arquivos relacionados à implementação são:
 
-## 7. Atualização da névoa escura
+•
+src/game.js: lógica da partida, controles, entidades, colisões, pontuação e condições de encerramento;
 
-O documento `documents/planejamento_futuro.md` previa que a névoa deveria ficar escura quando o Sol estivesse desligado. Essa funcionalidade foi implementada em `src/main.js`.
+•
+src/main.js: renderização, câmeras, iluminação, névoa e HUD;
 
-No fragment shader, são usadas duas cores:
+•
+src/gameGeometry.js: geometria das entidades do jogo;
 
-```glsl
-vec3 daySkyColor = vec3(0.46, 0.70, 0.92);
-vec3 nightSkyColor = vec3(0.02, 0.04, 0.10);
-vec3 skyColor = mix(nightSkyColor, daySkyColor, u_lightOn0);
-```
+•
+src/sceneGeometry.js: geometria do cenário;
 
-O valor de `u_lightOn0` representa o estado do Sol:
+•
+src/index.html: interface, instruções e estrutura visual da aplicação.
 
-- `1.0`: Sol ligado, usando o céu azul-claro.
-- `0.0`: Sol desligado, usando o céu azul-escuro.
+A execução pode ser realizada abrindo src/index.html por meio do Live Server do VS Code ou de um servidor HTTP local, garantindo o carregamento adequado dos arquivos do projeto.
 
-Além da cor da névoa, a cor de limpeza do canvas também acompanha o estado do Sol. Isso evita que os objetos fiquem escuros enquanto o fundo permanece azul-claro.
+10. Considerações finais
 
-A tecla **F** continua controlando se a névoa está ligada ou desligada. Portanto, o comportamento final é:
+A implementação atual atende aos requisitos de jogabilidade, interação e pontuação estabelecidos para a entrega. O jogador possui controle responsivo sobre a nave, dispõe de ações de ataque e esquiva, interage com inimigos, itens e obstáculos e recebe retorno visual sobre o estado da partida.
 
-| Sol | Névoa | Resultado |
-|---|---|---|
-| Ligado | Ligada | Céu e horizonte azul-claros |
-| Desligado | Ligada | Céu e horizonte azul-escuros |
-| Ligado ou desligado | Desligada | Névoa não é aplicada |
+As regras de pontuação são aplicadas de acordo com os eventos da partida, enquanto as colisões produzem consequências compatíveis com a proposta do jogo. As condições de vitória e derrota são apresentadas de maneira clara, e o reinício permite repetir a experiência sem recarregar a aplicação.
 
----
+A atualização da névoa escura complementa as melhorias de iluminação e cenário, estabelecendo uma diferença visual clara entre os estados diurno e noturno da cena.
 
-## 8. Registros das atualizações recentes
-
-As capturas a seguir foram obtidas durante os testes da versão atual do projeto. Elas registram visualmente as alterações descritas neste relatório.
-
-![Cena durante a partida com a névoa ligada e o Sol desligado](captura_jogo_nevoa_sol_off.png)
-
-*Figura 6 – Cena durante a partida com `Sol [Z]: OFF` e `Névoa [F]: ON`. A imagem mostra o cenário escurecido, a Arwing e uma nave inimiga no percurso, permitindo observar a interação entre a nave do jogador, os inimigos e o ambiente.*
-
-![Tela de fim de jogo](captura_fim_de_jogo.png)
-
-*Figura 7 – Tela de derrota após a perda das vidas. O jogo apresenta uma indicação clara de término e permite reiniciar pressionando `R`.*
-
-As imagens também servem como evidência da execução da versão jogável. Para uma comparação mais completa da névoa, recomenda-se gravar no vídeo uma sequência curta com o Sol ligado e outra com o Sol desligado, mantendo a câmera e a posição da nave semelhantes.
-
----
-
-## 9. Roteiro para a demonstração em vídeo
-
-O vídeo pode seguir esta sequência:
-
-1. Abrir `src/index.html` usando um servidor local, como o Live Server do VS Code.
-2. Mostrar a tela inicial e pressionar **Enter**.
-3. Demonstrar a movimentação usando as setas ou **W A S D**.
-4. Disparar usando **Espaço** ou **J**.
-5. Destruir uma nave inimiga e mostrar o aumento da pontuação.
-6. Deixar um inimigo escapar e mostrar a penalidade de 25 pontos.
-7. Coletar um anel e mostrar o aumento de 75 pontos.
-8. Usar **Shift** para demonstrar o boost e a esquiva.
-9. Colidir com um prédio ou inimigo para demonstrar a perda de vida.
-10. Mostrar o HUD com pontuação, meta e vidas.
-11. Pressionar **Z** com a névoa ligada e demonstrar a transição do céu claro para o azul-escuro.
-12. Continuar a partida até demonstrar a tela de derrota ou, caso seja possível, atingir os 3.000 pontos para demonstrar a vitória.
-13. Pressionar **R** para demonstrar o reinício da partida.
-
----
-
-## 10. Como executar
-
-A execução pode ser feita com um servidor local:
-
-```bash
-cd StarFox
-python3 -m http.server 8000
-```
-
-Em seguida, abrir no navegador:
-
-```text
-http://localhost:8000/src/index.html
-```
-
-Também é possível abrir `src/index.html` pelo Live Server do VS Code.
-
-Os arquivos-fonte e os recursos necessários estão distribuídos nas pastas:
-
-- `src/`
-- `textures/`
-- `screenshots/`
-- `tools/`
-- `documents/`
-
----
-
-## 11. Verificação final
-
-A implementação atende aos requisitos descritos pela professora:
-
-- Controles de movimentação implementados.
-- Disparo, boost e esquiva implementados.
-- Coleta de objetos implementada.
-- Colisões entre nave, inimigos, anéis e prédios implementadas.
-- Consequências das colisões e fugas implementadas.
-- Sistema de pontuação visível e atualizado durante a partida.
-- Condições de vitória e derrota implementadas.
-- Telas de início, vitória e derrota implementadas.
-- Reinício da partida implementado.
-- Névoa escura quando o Sol está desligado implementada.
-- Projeto jogável e preparado para demonstração em vídeo.
-
-Antes da entrega, recomenda-se atualizar o relatório anterior de melhorias para remover a observação de que a névoa escura ainda não havia sido implementada.
