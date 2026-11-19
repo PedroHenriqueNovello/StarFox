@@ -682,6 +682,12 @@ function render() {
     const sideTilt = Math.sin(n.roll) * 0.35;
     lights.holofote.dir = [sideTilt + n.x * 0.0, -0.18 + n.pitch * 0.5, -1.0];
 
+    // O fundo do canvas também acompanha o estado do Sol:
+    // azul-claro durante o dia e azul-noite quando o Sol está desligado.
+    const clearSkyColor = lights.sol.on
+        ? [0.46, 0.70, 0.92, 1.0]
+        : [0.02, 0.04, 0.10, 1.0];
+    gl.clearColor(...clearSkyColor);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     // ---- CÂMERA ----
